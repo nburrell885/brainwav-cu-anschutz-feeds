@@ -1,0 +1,55 @@
+name: Publish Feed
+
+on:
+  repository_dispatch:
+    types: [publish-feed]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-feed
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write the feed file
+        env:
+          FEED_FILE: ${{ github.event.client_payload.file }}
+          FEED_BODY: ${{ toJSON(github.event.client_payload.feed) }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, sys
+          name = (os.environ.get("FEED_FILE") or "").strip()
+          if not re.fullmatch(r"[a-z0-9-]+(/[a-z0-9-]+)*\.json", name):
+              sys.exit("Refused: file name must be lowercase letters, numbers, and dashes, ending in .json")
+          raw = os.environ.get("FEED_BODY") or "null"
+          feed = json.loads(raw)
+          if isinstance(feed, str):
+              feed = json.loads(feed)
+          if not isinstance(feed, dict) or not feed:
+              sys.exit("Refused: the feed is empty or not a JSON object")
+          os.makedirs(os.path.dirname(name) or ".", exist_ok=True)
+          with open(name, "w", encoding="utf-8") as f:
+              json.dump(feed, f, ensure_ascii=False, indent=2)
+              f.write("\n")
+          print("Wrote", name)
+          PY
+
+      - name: Commit if anything changed
+        env:
+          FEED_FILE: ${{ github.event.client_payload.file }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- "$FEED_FILE"
+          if git diff --cached --quiet; then
+            echo "No changes to publish."
+          else
+            git commit -m "Publish $FEED_FILE from Excel"
+            git push
+          fi
