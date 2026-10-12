@@ -2,7 +2,6 @@ name: Publish Feed
 
 on:
   repository_dispatch:
-    types: [publish-feed]
 
 permissions:
   contents: write
